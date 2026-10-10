@@ -28,3 +28,10 @@ server:
     existingSecret: restmail-postgres
   tls:
     secretName: restmail-tls
+
+# rest-mail.com, the project's own site. Whoever runs their own mail server
+# does not want it, so it is off unless asked for: this is the deployment of
+# rest-mail.com, not part of running a mail server. See charts/website in
+# github.com/rest-mail/website for every key.
+website:
+  enabled: false
