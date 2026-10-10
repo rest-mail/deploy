@@ -26,7 +26,7 @@ helm template rest-mail "$CHART_DIR" \
   --set server.api.ingress.tls.secretName=restmail-tls > "$tmp/out.yaml"
 
 echo "== API only by default =="
-has   "API deployed"            "$tmp/out.yaml" 'ghcr.io/rest-mail/api:2026.10.10'
+has   "API deployed"            "$tmp/out.yaml" 'ghcr.io/rest-mail/api:0.1.0'
 has   "Postgres deployed"       "$tmp/out.yaml" 'kind: StatefulSet'
 hasnt "no LoadBalancer"         "$tmp/out.yaml" 'type: LoadBalancer'
 hasnt "no SMTP gateway"         "$tmp/out.yaml" "name: rest-mail-server-smtp-gateway"
