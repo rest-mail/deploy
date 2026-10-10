@@ -1,0 +1,24 @@
+apiVersion: v2
+name: rest-mail
+description: |
+  Everything that makes up rest-mail, installed as one release. Each part is
+  a chart in its own right, published from the repository that builds it, and
+  pinned here by version: this chart only says which versions belong together
+  and how they are configured to work as one product.
+type: application
+version: 0.1.0
+# The product release this composes. Each subchart pins its own images; this
+# is the label for the set.
+appVersion: "2026.10.10"
+home: https://github.com/rest-mail/deploy
+sources:
+  - https://github.com/rest-mail/deploy
+dependencies:
+  # The REST API, its database, the JS filter sidecar and the protocol
+  # gateways. One chart because they release together from one monorepo and
+  # share an mTLS CA minted in a single render.
+  - name: restmail
+    alias: server
+    version: 0.4.1
+    repository: oci://ghcr.io/rest-mail/charts
+    condition: server.enabled
