@@ -31,6 +31,8 @@ has   "Postgres deployed"       "$tmp/out.yaml" 'kind: StatefulSet'
 hasnt "no LoadBalancer"         "$tmp/out.yaml" 'type: LoadBalancer'
 hasnt "no SMTP gateway"         "$tmp/out.yaml" "name: rest-mail-server-smtp-gateway"
 
+hasnt "no website by default"   "$tmp/out.yaml" "ghcr.io/rest-mail/website"
+
 echo "== consumes what the installer provides =="
 hasnt "no generated API Secret" "$tmp/out.yaml" 'JWT_SECRET:'
 has   "reads restmail-api"      "$tmp/out.yaml" 'name: restmail-api'
@@ -38,4 +40,21 @@ has   "reads restmail-postgres" "$tmp/out.yaml" 'name: restmail-postgres'
 has   "mounts restmail-tls"     "$tmp/out.yaml" 'secretName: restmail-tls'
 has   "ingress for the host"    "$tmp/out.yaml" 'host: "mail.example.com"'
 
-echo; echo "All umbrella render tests passed."
+echo "== the website, where it is asked for =="
+helm template rest-mail "$CHART_DIR" \
+  --set server.mailserver.hostname=mail.example.com \
+  --set server.mailserver.domain=example.com \
+  --set website.enabled=true \
+  --set website.image.tag=2026.10.10 \
+  --set website.ingress.enabled=true \
+  --set 'website.ingress.hosts={example.com,www.example.com}' \
+  --set website.ingress.tls.enabled=true \
+  --set website.ingress.tls.secretName=website-tls > "$tmp/site.yaml"
+has "the site deployed"  "$tmp/site.yaml" 'ghcr.io/rest-mail/website:2026.10.10'
+has "the apex"           "$tmp/site.yaml" 'host: "example.com"'
+has "its certificate"    "$tmp/site.yaml" 'secretName: website-tls'
+# The mail server is still the thing this chart is for.
+has "the API as well"    "$tmp/site.yaml" 'ghcr.io/rest-mail/api:0.2.0'
+
+echo
+echo "All umbrella render tests passed."
