@@ -3,7 +3,7 @@
 The chart that installs rest-mail into a Kubernetes cluster, as one release.
 
 ```sh
-helm install rest-mail oci://ghcr.io/rest-mail/charts/rest-mail --version 0.5.0 \
+helm install rest-mail oci://ghcr.io/rest-mail/charts/rest-mail --version 0.6.0 \
   --namespace rest-mail -f my-values.yaml
 ```
 

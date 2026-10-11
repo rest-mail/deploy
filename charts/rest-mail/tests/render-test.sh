@@ -26,7 +26,7 @@ helm template rest-mail "$CHART_DIR" \
   --set server.api.ingress.tls.secretName=restmail-tls > "$tmp/out.yaml"
 
 echo "== API only by default =="
-has   "API deployed"            "$tmp/out.yaml" 'ghcr.io/rest-mail/api:0.3.0'
+has   "API deployed"            "$tmp/out.yaml" 'ghcr.io/rest-mail/api:0.4.0'
 has   "Postgres deployed"       "$tmp/out.yaml" 'kind: StatefulSet'
 hasnt "no LoadBalancer"         "$tmp/out.yaml" 'type: LoadBalancer'
 hasnt "no SMTP gateway"         "$tmp/out.yaml" "name: rest-mail-server-smtp-gateway"
@@ -54,7 +54,7 @@ has "the site deployed"  "$tmp/site.yaml" 'ghcr.io/rest-mail/website:2026.10.10'
 has "the apex"           "$tmp/site.yaml" 'host: "example.com"'
 has "its certificate"    "$tmp/site.yaml" 'secretName: website-tls'
 # The mail server is still the thing this chart is for.
-has "the API as well"    "$tmp/site.yaml" 'ghcr.io/rest-mail/api:0.3.0'
+has "the API as well"    "$tmp/site.yaml" 'ghcr.io/rest-mail/api:0.4.0'
 
 echo
 echo "All umbrella render tests passed."
