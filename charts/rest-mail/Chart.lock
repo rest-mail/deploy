@@ -1,9 +1,9 @@
 dependencies:
 - name: restmail
   repository: oci://ghcr.io/rest-mail/charts
-  version: 0.8.0
+  version: 0.10.0
 - name: website
   repository: oci://ghcr.io/rest-mail/charts
   version: 0.1.0
-digest: sha256:4f5974223cc2a57c436bdcc81c82c949f32e2839545f2594d8f250e087955d5f
-generated: "2026-10-10T23:42:13.855339672+01:00"
+digest: sha256:66f372f59a06f3283a022a96b2d8032bfd52120e27603f639ecae410743af448
+generated: "2026-10-11T05:10:03.142096137+01:00"
