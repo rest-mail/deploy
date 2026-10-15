@@ -5,21 +5,12 @@
 server:
   enabled: true
 
-  # The protocol gateways each want a LoadBalancer on a privileged port. The
-  # REST API is the whole product without them, and the phone and web clients
-  # speak only REST, so they start off. Turn one on where the cluster can give
-  # it an address.
-  smtpGateway:
-    enabled: false
-  imapGateway:
-    enabled: false
-  pop3Gateway:
-    enabled: false
-
   # Supplied by whoever installs this, never generated here: MASTER_KEY
   # encrypts private keys at rest, so a value regenerated on upgrade would make
   # every stored key unreadable.
-  #   restmail-api       JWT_SECRET (32+ bytes), MASTER_KEY (16+ bytes)
+  #   restmail-api       JWT_SECRET (32+ bytes), MASTER_KEY (16+ bytes),
+  #                      BOOTSTRAP_ADMIN_PASSWORD (16+ characters; without it,
+  #                      the server has no admin)
   #   restmail-postgres  POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
   #   restmail-tls       kubernetes.io/tls, e.g. from a cert-manager Certificate
   api:
