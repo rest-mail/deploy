@@ -45,12 +45,12 @@ helm template rest-mail "$CHART_DIR" \
   --set server.mailserver.hostname=mail.example.com \
   --set server.mailserver.domain=example.com \
   --set website.enabled=true \
-  --set website.image.tag=2026.10.10 \
+  --set website.image.tag=0.1.0 \
   --set website.ingress.enabled=true \
   --set 'website.ingress.hosts={example.com,www.example.com}' \
   --set website.ingress.tls.enabled=true \
   --set website.ingress.tls.secretName=website-tls > "$tmp/site.yaml"
-has "the site deployed"  "$tmp/site.yaml" 'ghcr.io/rest-mail/website:2026.10.10'
+has "the site deployed"  "$tmp/site.yaml" 'ghcr.io/rest-mail/website:0.1.0'
 has "the apex"           "$tmp/site.yaml" 'host: "example.com"'
 has "its certificate"    "$tmp/site.yaml" 'secretName: website-tls'
 # The mail server is still the thing this chart is for.
