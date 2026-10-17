@@ -6,10 +6,10 @@ description: |
   pinned here by version: this chart only says which versions belong together
   and how they are configured to work as one product.
 type: application
-version: 0.6.0
+version: 0.7.0
 # The product release this composes. Each subchart pins its own images; this
 # is the label for the set.
-appVersion: "0.4.0"
+appVersion: "0.6.0"
 home: https://github.com/rest-mail/deploy
 sources:
   - https://github.com/rest-mail/deploy
@@ -19,7 +19,7 @@ dependencies:
   # share an mTLS CA minted in a single render.
   - name: restmail
     alias: server
-    version: 0.12.0
+    version: 0.13.0
     repository: oci://ghcr.io/rest-mail/charts
     condition: server.enabled
   # rest-mail.com itself: the project's own site, and the files that make a
@@ -27,6 +27,6 @@ dependencies:
   # somebody else runs has no use for this project's website; the deployment of
   # rest-mail.com turns it on.
   - name: website
-    version: 0.1.0
+    version: 0.2.0
     repository: oci://ghcr.io/rest-mail/charts
     condition: website.enabled

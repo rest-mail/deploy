@@ -3,7 +3,7 @@
 The chart that installs rest-mail into a Kubernetes cluster, as one release.
 
 ```sh
-helm install rest-mail oci://ghcr.io/rest-mail/charts/rest-mail --version 0.6.0 \
+helm install rest-mail oci://ghcr.io/rest-mail/charts/rest-mail --version 0.7.0 \
   --namespace rest-mail -f my-values.yaml
 ```
 
@@ -13,9 +13,8 @@ belong together and configures them to work as one product.
 
 | Subchart | From | Default |
 |---|---|---|
-| `server` | `oci://ghcr.io/rest-mail/charts/restmail` — rest-mail-server's `helm/restmail` | on, REST API only |
-
-The website joins as a second subchart once it has a chart of its own.
+| `server` | `oci://ghcr.io/rest-mail/charts/restmail` — rest-mail-server's `helm/restmail` | on: the REST API and the SMTP, IMAP and POP3 gateways |
+| `website` | `oci://ghcr.io/rest-mail/charts/website` — rest-mail/website's `charts/website` | off: rest-mail.com itself |
 
 ## What the installer provides
 
@@ -25,18 +24,36 @@ would leave every stored key unreadable.
 
 | Secret | Keys |
 |---|---|
-| `restmail-api` | `JWT_SECRET` (32+ bytes), `MASTER_KEY` (16+ bytes) |
+| `restmail-api` | `JWT_SECRET` (32+ bytes), `MASTER_KEY` (16+ bytes), `BOOTSTRAP_ADMIN_PASSWORD` (16+ characters) |
 | `restmail-postgres` | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` |
 | `restmail-tls` | `kubernetes.io/tls` — e.g. a cert-manager Certificate |
+
+`BOOTSTRAP_ADMIN_PASSWORD` is the first admin's password, and without it nobody
+can sign in. Whoever signs in with it must choose their own password and enroll
+an authenticator at once, after which it stops working; it also expires 72
+hours after it is first applied.
 
 Plus the cluster's own facts: `server.mailserver.hostname`/`domain` and the
 `server.api.ingress.*` block.
 
 ## The mail gateways
 
-SMTP, IMAP and POP3 start off: each wants a `LoadBalancer` on a privileged
-port, and the phone and web clients speak only REST. Turn one on with
-`server.smtpGateway.enabled=true` where the cluster can give it an address.
+SMTP, IMAP and POP3 are on. They are how any ordinary mail client reads and
+sends mail, and how other mail servers deliver to this one. Administration is
+not among them: that is the rest-mail app and the admin webmail.
+
+Mail clients connect over TLS only: 465 to send, 993 for IMAP, 995 for POP3.
+There is no 587, 143 or 110. Port 25 is for other mail servers: it offers
+STARTTLS, and takes mail from a server that will not use it.
+
+Each gateway is a `LoadBalancer` Service on those ports. k3s gives them the
+node's address out of the box; elsewhere the cluster needs a load balancer, or
+the Service waits for an address forever. Without one, turn a gateway off with
+`server.smtpGateway.enabled=false` (likewise `imapGateway`, `pop3Gateway`): the
+REST API works without them.
+
+Mail clients refuse a certificate they do not trust, so `restmail-tls` must
+hold a publicly trusted one for the mail hostname.
 
 ## Releasing
 
