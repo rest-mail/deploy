@@ -1,0 +1,56 @@
+name: Image workflow
+
+# Checks image.yml, the build every image repository calls: actionlint over
+# every workflow here; offline, what its steps decide (tests/image-workflow/test.sh, with the HEALTHCHECK fixtures
+# built for real), then the workflow itself, called as an image repository
+# would and kept to validation, building a tiny fixture for every platform.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/image.yml
+      - .github/workflows/image-workflow.yml
+      - tests/image-workflow/**
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install PyYAML
+        run: python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y --no-install-recommends python3-yaml
+
+      - name: Lint the workflows
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint"
+
+      - name: Test
+        env:
+          REAL_DOCKER: "1"
+        run: tests/image-workflow/test.sh
+
+  fixture:
+    name: Fixture build
+    # Never publishes: publish is false, and this repository is not an image.
+    # The caller must still grant packages: write, the most image.yml's
+    # publish job asks for; image.yml's validate job narrows it to read.
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      context: tests/image-workflow/fixtures/healthy
+      publish: false

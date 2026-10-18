@@ -1,0 +1,257 @@
+name: Image
+
+# The one build for every rest-mail container image: reference-postfix,
+# reference-dovecot, reference-rspamd and any that follow. An image
+# repository's build.yml calls it with `uses:`, pinned to a commit of this
+# repository; see "Building an image" in the README.
+#
+# Images are versioned with SemVer, from a git tag, and go to
+# ghcr.io/<the calling repository>, never anywhere a caller names:
+#   - a tag v1.2.3 publishes 1.2.3, a version things pin;
+#   - a push to the default branch publishes latest and the commit's short
+#     sha, for trying a change before it is released; nothing should pin them.
+# There are no date-based (CalVer) tags, and a tag shaped like one is refused.
+#
+# Anything else, pull requests from forks included, builds every platform and
+# checks the image without logging in or pushing. Publishing is its own job,
+# the only one given packages: write, and it decides again that the run may
+# publish and checks the image it is about to push declares a HEALTHCHECK.
+#
+# That check is of configuration: the image says how to tell it is healthy.
+# Whether the service then comes up healthy depends on what each one needs to
+# start (Postfix its maps, Dovecot its users), so it is the caller's own
+# runtime-check script, when it has one.
+#
+# Each run: script takes its inputs from env, never from ${{ }} inside the
+# script, and tests/image-workflow/test.sh runs those scripts as they are here.
+
+on:
+  workflow_call:
+    inputs:
+      context:
+        description: Build context, a path inside the calling repository.
+        type: string
+        default: .
+      dockerfile:
+        description: Dockerfile, a path inside the calling repository. Defaults to <context>/Dockerfile.
+        type: string
+        default: ""
+      platforms:
+        description: Platforms to build, comma-separated; the first is the one checked.
+        type: string
+        default: linux/amd64,linux/arm64
+      publish:
+        description: false keeps a run that could publish to validation only. It never lets one publish that otherwise could not.
+        type: boolean
+        default: true
+      runtime-check:
+        description: An executable in the calling repository, run with IMAGE set to the built image, that checks the service comes up healthy. Optional.
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - &checkout
+        name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - &plan
+        name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          PLATFORMS: ${{ inputs.platforms }}
+          RUNTIME_CHECK: ${{ inputs.runtime-check }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*" >&2; exit 1; }
+          inside() { # a relative path that stays inside the checkout
+            [[ "$2" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && ! "$2" =~ (^|/)\.\.(/|$) ]] \
+              || fail "$1 must be a relative path inside the repository, not '$2'"
+          }
+
+          inside context "$CONTEXT"
+          file="${DOCKERFILE:-$CONTEXT/Dockerfile}"
+          inside dockerfile "$file"
+          [[ -z "$RUNTIME_CHECK" ]] || inside runtime-check "$RUNTIME_CHECK"
+          [[ "$PLATFORMS" =~ ^linux/[a-z0-9]+(/v[0-9]+)?(,linux/[a-z0-9]+(/v[0-9]+)?)*$ ]] \
+            || fail "platforms must be like linux/amd64,linux/arm64, not '$PLATFORMS'"
+          # The destination is the calling repository's own package, lowercase as GHCR requires.
+          [[ "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "unexpected repository '$REPOSITORY'"
+          image="ghcr.io/${REPOSITORY,,}"
+
+          # Only a push (or a manual run) of the default branch or of a version
+          # tag publishes. pull_request_target and every other event validate.
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          kind=validate version=""
+          if [[ "$EVENT" == push || "$EVENT" == workflow_dispatch ]]; then
+            if [[ "$REF" == refs/tags/* ]]; then
+              tag="${REF#refs/tags/}"
+              [[ "$tag" =~ $semver ]] || fail "tag '$tag' is not a version: tag vMAJOR.MINOR.PATCH"
+              (( ${#BASH_REMATCH[1]} < 4 )) || fail "tag '$tag' is a date, not a version: versions are SemVer"
+              kind=release version="${tag#v}"
+            elif [[ -n "$DEFAULT_BRANCH" && "$REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+              kind=branch
+            fi
+          fi
+          publish=false
+          [[ "$kind" == validate || "$PUBLISH_INPUT" != true ]] || publish=true
+
+          {
+            echo "image=$image"
+            echo "kind=$kind"
+            echo "version=$version"
+            echo "publish=$publish"
+            echo "file=$file"
+            echo "check-platform=${PLATFORMS%%,*}"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::$EVENT of $REF: $kind run, publish=$publish to $image"
+
+      - &qemu
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - &buildx
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build every platform
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ steps.plan.outputs.file }}
+          platforms: ${{ inputs.platforms }}
+          push: false
+
+      - &load
+        name: Load the image to check
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ steps.plan.outputs.file }}
+          platforms: ${{ steps.plan.outputs.check-platform }}
+          load: true
+          push: false
+          tags: image-under-test:local
+
+      - &healthcheck
+        name: Check the image declares a HEALTHCHECK
+        id: healthcheck
+        env:
+          IMAGE: image-under-test:local
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*" >&2; exit 1; }
+          hc="$(docker image inspect --format '{{json .Config.Healthcheck}}' "$IMAGE")" \
+            || fail "cannot inspect $IMAGE"
+          jq empty <<<"$hc" 2>/dev/null || fail "cannot read the HEALTHCHECK of $IMAGE: $hc"
+          kind="$(jq -r 'if type != "object" then "absent" else (.Test // [])[0] // "absent" end' <<<"$hc")"
+          cmd="$(jq -r 'if type == "object" then (.Test // [])[1:] | join(" ") else "" end' <<<"$hc")"
+          case "$kind" in
+            CMD|CMD-SHELL) [[ -n "${cmd// /}" ]] || fail "$IMAGE has a HEALTHCHECK with no command" ;;
+            NONE) fail "$IMAGE turns its HEALTHCHECK off (HEALTHCHECK NONE)" ;;
+            absent) fail "$IMAGE declares no HEALTHCHECK" ;;
+            *) fail "$IMAGE has a HEALTHCHECK of unknown form '$kind'" ;;
+          esac
+          echo "::notice::$IMAGE checks its health with: $cmd"
+
+      - name: Check the service comes up healthy
+        if: inputs.runtime-check != ''
+        timeout-minutes: 10
+        env:
+          IMAGE: image-under-test:local
+          RUNTIME_CHECK: ${{ inputs.runtime-check }}
+        run: '"./$RUNTIME_CHECK"'
+
+  publish:
+    name: Publish
+    needs: validate
+    if: needs.validate.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: image-publish-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - *checkout
+      # Decided again here from the same facts, not taken on trust from another job.
+      - *plan
+      - name: Refuse a run that may not publish
+        if: steps.plan.outputs.publish != 'true'
+        run: exit 1
+      - *qemu
+      - *buildx
+      - *load
+      - *healthcheck
+
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ steps.plan.outputs.image }}
+          # latest only ever follows the default branch, never a tag.
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha,prefix=,enable=${{ github.ref_type == 'branch' }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Check the tags are the planned ones
+        id: tags
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE: ${{ steps.plan.outputs.image }}
+          KIND: ${{ steps.plan.outputs.kind }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*" >&2; exit 1; }
+          case "$KIND" in
+            release) want="$IMAGE:$VERSION" ;;
+            branch) want="$(printf '%s\n' "$IMAGE:latest" "$IMAGE:${SHA:0:7}")" ;;
+            *) fail "a $KIND run publishes nothing" ;;
+          esac
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "unexpected commit '$SHA'"
+          got="$(printf '%s\n' "$TAGS" | sed '/^$/d' | sort)"
+          want="$(printf '%s\n' "$want" | sort)"
+          [[ "$got" == "$want" ]] || fail "tags are not the planned ones: got [${got//$'\n'/ }], want [${want//$'\n'/ }]"
+          echo "::notice::publishing ${got//$'\n'/ }"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ steps.plan.outputs.file }}
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

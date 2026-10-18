@@ -8,8 +8,13 @@ name: Chart
 
 on:
   pull_request:
+  # Only a change to the chart can publish one; a merge of anything else in
+  # this repository (the image workflow, say) has nothing to publish.
   push:
     branches: [main]
+    paths:
+      - charts/**
+      - .github/workflows/chart.yml
   workflow_dispatch:
 
 permissions:

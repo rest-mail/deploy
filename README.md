@@ -9,7 +9,9 @@ helm install rest-mail oci://ghcr.io/rest-mail/charts/rest-mail --version 0.7.0 
 
 It builds nothing itself. Each part of rest-mail is a chart in its own right,
 published from the repository that builds it; this one pins which versions
-belong together and configures them to work as one product.
+belong together and configures them to work as one product. It also holds the
+workflow those repositories build their images with (see
+[Building an image](#building-an-image)).
 
 | Subchart | From | Default |
 |---|---|---|
@@ -63,3 +65,74 @@ bump its dependency version and run `helm dependency update charts/rest-mail`
 so `Chart.lock` follows.
 
 Test locally with `charts/rest-mail/tests/render-test.sh`.
+
+## Building an image
+
+`.github/workflows/image.yml` is the one build for every rest-mail container
+image (`reference-postfix`, `reference-dovecot`, `reference-rspamd`), so
+their versioning and publishing cannot drift apart. An image repository calls
+it from its own `build.yml`:
+
+```yaml
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  image:
+    # The most image.yml asks for. Its validate job narrows this to
+    # contents: read; only its publish job, on a trusted run, uses packages.
+    permissions:
+      contents: read
+      packages: write
+    # The full 40-character sha of a commit on this repository's main, never a
+    # branch or tag that could move under the caller.
+    uses: rest-mail/deploy/.github/workflows/image.yml@<commit sha on main>
+```
+
+The same three lines of `jobs:` serve `reference-postfix`, `reference-dovecot`
+and `reference-rspamd`: each builds the `Dockerfile` at its root for
+`linux/amd64,linux/arm64`, the defaults. Pin the sha of the merged commit that
+added the workflow, and move it forward as a reviewed change of its own;
+a comment after the sha naming the rest-mail/deploy pull request says what it is.
+
+What a run does:
+
+| Run | Builds and checks | Publishes to `ghcr.io/<owner>/<repo>` |
+|---|---|---|
+| push of tag `v1.2.3` (or `v1.2.3-rc.1`) | yes | `1.2.3` — a version, what anything deploying it pins |
+| push to the default branch | yes | `latest` and the commit's short sha — for trying a change, never pinned |
+| pull request (forks too), other branch, any other event | yes | nothing: no login, no token beyond reading the code |
+
+Images are versioned with SemVer only. A tag that is not `vMAJOR.MINOR.PATCH`
+fails the run, and so does one shaped like a date (`v2026.10.18`): there are
+no CalVer tags, and none should be made again. The destination is always the
+calling repository's own package; no input can point it anywhere else.
+
+Nothing is pushed unless the image declares a `HEALTHCHECK` (not `NONE`),
+checked on the image built in the same job, just before it logs in. That is
+the image saying how to tell it is healthy, not proof that the service starts:
+Postfix, Dovecot and rspamd each need their own configuration to come up. A
+repository that has a fixture for that passes it as `runtime-check`, an
+executable in the repository run with `IMAGE` set to the built image; a
+failing one stops the publish.
+
+| Input | Default | |
+|---|---|---|
+| `context` | `.` | build context, inside the repository |
+| `dockerfile` | `<context>/Dockerfile` | |
+| `platforms` | `linux/amd64,linux/arm64` | the first is the one checked |
+| `runtime-check` | none | e.g. `tests/health.sh` |
+| `publish` | `true` | `false` keeps a run to validation; it never lets one publish that otherwise could not |
+
+Test it locally with `tests/image-workflow/test.sh` (`REAL_DOCKER=1` also
+builds the HEALTHCHECK fixtures, one platform, `FROM scratch`). CI runs that
+and calls the workflow on `tests/image-workflow/fixtures/healthy` for every
+platform, with `publish: false`.
