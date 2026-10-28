@@ -116,7 +116,7 @@ fails the run, and so does one shaped like a date (`v2026.10.18`): there are
 no CalVer tags, and none should be made again. The destination is always the
 calling repository's own package; no input can point it anywhere else.
 
-Nothing is pushed unless the image declares a `HEALTHCHECK` (not `NONE`),
+By default, nothing is pushed unless the image declares a `HEALTHCHECK` (not `NONE`),
 checked on the image built in the same job, just before it logs in. That is
 the image saying how to tell it is healthy, not proof that the service starts:
 Postfix, Dovecot and rspamd each need their own configuration to come up. A
@@ -124,15 +124,23 @@ repository that has a fixture for that passes it as `runtime-check`, an
 executable in the repository run with `IMAGE` set to the built image; a
 failing one stops the publish.
 
+One-shot jobs such as `reference-certgen` may set `require-healthcheck: false`
+and provide a `runtime-check` that runs the job, requires a successful exit,
+and validates its output. The exemption skips only the image's HEALTHCHECK
+declaration check in both jobs; runtime validation still runs. Do not add a
+placeholder HEALTHCHECK to an image that exits after completing its work.
+
 | Input | Default | |
 |---|---|---|
 | `context` | `.` | build context, inside the repository |
 | `dockerfile` | `<context>/Dockerfile` | |
 | `platforms` | `linux/amd64,linux/arm64` | the first is the one checked |
 | `runtime-check` | none | e.g. `tests/health.sh` |
+| `require-healthcheck` | `true` | `false` exempts one-shot jobs from the image HEALTHCHECK requirement |
 | `publish` | `true` | `false` keeps a run to validation; it never lets one publish that otherwise could not |
 
 Test it locally with `tests/image-workflow/test.sh` (`REAL_DOCKER=1` also
 builds the HEALTHCHECK fixtures, one platform, `FROM scratch`). CI runs that
 and calls the workflow on `tests/image-workflow/fixtures/healthy` for every
-platform, with `publish: false`.
+platform, with `publish: false`, plus the no-healthcheck fixture with the explicit
+one-shot exemption.

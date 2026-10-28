@@ -64,6 +64,9 @@ def _contract(wf, errors):
     call = on["workflow_call"] or {}
     check("secrets" not in call, "it takes no secrets: GITHUB_TOKEN is all it needs")
     inputs = set((call.get("inputs") or {}).keys())
+    healthcheck_input = call["inputs"]["require-healthcheck"]
+    check(healthcheck_input.get("type") == "boolean", "require-healthcheck is a boolean")
+    check(healthcheck_input.get("default") is True, "services require a HEALTHCHECK by default")
     for name in ("image", "images", "registry", "repository", "tags", "push"):
         check(name not in inputs, f"input {name!r} would let a caller choose where or what it pushes")
     check(wf.get("permissions") == {}, "the workflow grants nothing by default")
@@ -79,6 +82,8 @@ def _contract(wf, errors):
 
     for name, job in wf["jobs"].items():
         check(isinstance(job.get("timeout-minutes"), int), f"{name} has a timeout")
+        check(step(wf, name, "healthcheck").get("if") == "inputs.require-healthcheck",
+              f"{name} skips only the HEALTHCHECK when explicitly exempted")
         for s in job["steps"]:
             label = f"{name}: {s.get('name', s.get('uses'))}"
             if "uses" in s:
@@ -96,6 +101,9 @@ def _contract(wf, errors):
         check((s.get("with") or {}).get("push") in (None, False), f"{label} must not push")
         check("secrets." not in yaml.safe_dump(s), f"{label} must not see a secret")
     index(vsteps, lambda s: s.get("id") == "healthcheck", "checks the HEALTHCHECK in validate")
+    runtime = step(wf, "validate", "runtime-check")
+    check(runtime.get("if") == "inputs.runtime-check != ''",
+          "runtime validation is independent of the HEALTHCHECK exemption")
 
     psteps = publish["steps"]
     plan = index(psteps, lambda s: s.get("id") == "plan", "plans in publish")
@@ -122,6 +130,25 @@ def broken():
 
     def unpinned(wf):
         wf["jobs"]["validate"]["steps"][0]["uses"] = "actions/checkout@v4"
+
+    def healthcheck_optional_by_default(wf):
+        triggers(wf)["workflow_call"]["inputs"]["require-healthcheck"]["default"] = False
+
+    def healthcheck_string(wf):
+        triggers(wf)["workflow_call"]["inputs"]["require-healthcheck"]["type"] = "string"
+
+    def inverted_exemption(wf):
+        step(wf, "validate", "healthcheck")["if"] = "!inputs.require-healthcheck"
+
+    def publish_ignores_exemption(wf):
+        # Break the alias only in publish, as a workflow edit could.
+        steps = wf["jobs"]["publish"]["steps"]
+        h = next(i for i, s in enumerate(steps) if s.get("id") == "healthcheck")
+        steps[h] = dict(steps[h], **{"if": "always()"})
+
+    def exemption_skips_runtime(wf):
+        runtime = step(wf, "validate", "runtime-check")
+        runtime["if"] = "inputs.require-healthcheck && inputs.runtime-check != ''"
 
     def login_in_validate(wf):
         login = next(s for s in wf["jobs"]["publish"]["steps"] if uses("docker/login-action")(s))
