@@ -15,7 +15,9 @@ name: Image
 # Anything else, pull requests from forks included, builds every platform and
 # checks the image without logging in or pushing. Publishing is its own job,
 # the only one given packages: write, and it decides again that the run may
-# publish and checks the image it is about to push declares a HEALTHCHECK.
+# publish and, by default, checks the image it is about to push declares a HEALTHCHECK.
+# One-shot jobs may explicitly opt out with require-healthcheck: false; their
+# runtime-check should verify successful completion and the generated output.
 #
 # That check is of configuration: the image says how to tell it is healthy.
 # Whether the service then comes up healthy depends on what each one needs to
@@ -45,9 +47,13 @@ on:
         type: boolean
         default: true
       runtime-check:
-        description: An executable in the calling repository, run with IMAGE set to the built image, that checks the service comes up healthy. Optional.
+        description: An executable in the calling repository, run with IMAGE set to the built image, that checks service health or successful job completion and output. Optional.
         type: string
         default: ""
+      require-healthcheck:
+        description: Require an image HEALTHCHECK. Set false only for one-shot jobs, validated with runtime-check.
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -155,6 +161,7 @@ jobs:
       - &healthcheck
         name: Check the image declares a HEALTHCHECK
         id: healthcheck
+        if: inputs.require-healthcheck
         env:
           IMAGE: image-under-test:local
         run: |
@@ -173,7 +180,8 @@ jobs:
           esac
           echo "::notice::$IMAGE checks its health with: $cmd"
 
-      - name: Check the service comes up healthy
+      - name: Check the image at runtime
+        id: runtime-check
         if: inputs.runtime-check != ''
         timeout-minutes: 10
         env:

@@ -54,3 +54,14 @@ jobs:
     with:
       context: tests/image-workflow/fixtures/healthy
       publish: false
+
+  job-fixture:
+    name: One-shot exemption fixture
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      context: tests/image-workflow/fixtures/no-healthcheck
+      require-healthcheck: false
+      publish: false
